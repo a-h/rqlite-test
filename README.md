@@ -1,4 +1,4 @@
-# github.com/a-h/flake-templates/go
+# github.com/a-h/rqlite-test
 
 ## Tasks
 
