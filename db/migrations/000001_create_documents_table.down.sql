@@ -1,1 +1,1 @@
-DROP TABLE "documents";
+DROP TABLE documents;

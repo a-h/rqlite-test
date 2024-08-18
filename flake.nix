@@ -28,6 +28,11 @@
         system = system;
         pkgs = import nixpkgs {
           inherit system;
+          overlays = [
+            (self: super: {
+              rqlite = super.pkgs.callPackage ./rqlite.nix { };
+            })
+          ];
         };
       });
 
@@ -88,7 +93,6 @@
         gomod2nix.legacyPackages.${system}.gomod2nix
         # Database tools.
         pkgs.rqlite # Distributed sqlite.
-        pkgs.sqlc # Generates Go code from SQL queries.
         pkgs.go-migrate # Migrate database schema.
       ];
 

@@ -1,5 +1,5 @@
-CREATE TABLE "documents" (
-    "id" INTEGER primary key,
-    "name" TEXT NOT NULL,
-    "content" TEXT NOT NULL
+create table documents (
+    id integer primary key,
+    name text not null,
+    content text not null
 );

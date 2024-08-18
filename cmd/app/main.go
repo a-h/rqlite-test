@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -11,7 +10,7 @@ import (
 
 	"github.com/a-h/respond"
 	"github.com/a-h/rqlite-test/db"
-	_ "github.com/rqlite/gorqlite/stdlib"
+	"github.com/rqlite/gorqlite"
 )
 
 func main() {
@@ -26,11 +25,6 @@ func main() {
 		Port:     4001,
 		Secure:   false,
 	}
-	driver, err := sql.Open("rqlite", databaseURL.DataSourceName())
-	if err != nil {
-		log.Error("failed to open database", slog.Any("error", err))
-		os.Exit(1)
-	}
 
 	if err := db.Migrate(databaseURL); err != nil {
 		log.Error("migrations failed", slog.Any("error", err))
@@ -40,12 +34,18 @@ func main() {
 
 	log.Info("Starting server", slog.Int("port", 8080))
 
-	queries := db.New(driver)
+	conn, err := gorqlite.Open(databaseURL.DataSourceName())
+	if err != nil {
+		log.Error("failed to open connection", slog.Any("error", err))
+		os.Exit(1)
+	}
+	defer conn.Close()
+	queries := db.New(conn)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/documents", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			docs, err := queries.DocumentsSelectMany(r.Context())
+			docs, err := queries.DocumentsSelect(r.Context())
 			if err != nil {
 				log.Error("failed to list documents", slog.Any("error", err), slog.String("type", reflect.TypeOf(err).String()))
 				respond.WithError(w, "failed to list documents", http.StatusInternalServerError)
@@ -61,15 +61,31 @@ func main() {
 				return
 			}
 			//TODO: Validate the request.
-			if err := queries.DocumentsInsert(r.Context(), db.DocumentsInsertParams{
-				Name:    req.Name,
-				Content: req.Content,
-			}); err != nil {
+			id, err := queries.DocumentsInsert(r.Context(), db.DocumentsInsertArgs{
+				Name:      req.Name,
+				Content:   req.Content,
+				Embedding: req.Embedding,
+			})
+			if err != nil {
 				log.Error("failed to insert document", slog.Any("error", err))
 				respond.WithError(w, "failed to insert document", http.StatusInternalServerError)
 				return
 			}
-			respond.WithJSON(w, "document inserted", http.StatusCreated)
+			respond.WithJSON(w, map[string]any{"id": id}, http.StatusCreated)
+			return
+		}
+		respond.WithError(w, "method not allowed", http.StatusMethodNotAllowed)
+	})
+	mux.HandleFunc("/documents/nearest", func(w http.ResponseWriter, r *http.Request) {
+		//TODO: Accept params.
+		if r.Method == http.MethodGet {
+			docs, err := queries.DocumentsSelectNearest(r.Context())
+			if err != nil {
+				log.Error("failed to list documents", slog.Any("error", err), slog.String("type", reflect.TypeOf(err).String()))
+				respond.WithError(w, "failed to list documents", http.StatusInternalServerError)
+				return
+			}
+			respond.WithJSON(w, docs, http.StatusOK)
 			return
 		}
 		respond.WithError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -81,7 +97,7 @@ func main() {
 			respond.WithError(w, "invalid id", http.StatusBadRequest)
 			return
 		}
-		doc, err := queries.DocumentsSelectOneByID(r.Context(), id)
+		doc, err := queries.DocumentsGet(r.Context(), id)
 		if err != nil {
 			log.Error("failed to get document", slog.Any("error", err))
 			respond.WithError(w, "failed to get document", http.StatusInternalServerError)
@@ -94,6 +110,7 @@ func main() {
 }
 
 type DocumentsPostRequest struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
+	Name      string    `json:"name"`
+	Content   string    `json:"content"`
+	Embedding []float64 `json:"embedding"`
 }
